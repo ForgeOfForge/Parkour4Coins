@@ -1,0 +1,15 @@
+[
+{
+  "modid": "Parkour4Coins",
+  "name": "Parkour4Coins",
+  "description": "Checkpoint splits & audio cue",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "https://discord.com/invite/AKGDg7NHvc",
+  "updateUrl": "",
+  "authorList": ["_F0RGE_"],
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]

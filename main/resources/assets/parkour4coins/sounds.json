@@ -1,0 +1,6 @@
+{ 
+  "ping": {
+    "sounds":["ping"],
+    "category": "record"
+  }
+}
