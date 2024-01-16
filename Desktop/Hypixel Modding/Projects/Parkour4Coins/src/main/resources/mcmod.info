@@ -1,0 +1,16 @@
+[
+{
+  "modid": "parkour4Coins",
+  "name": "Parkour4Coins",
+  "description": "Count those kills",
+  "version": "${version}",
+  "mcversion": "${mcversion}",
+  "url": "https://discord.gg/AKGDg7NHvc",
+  "updateUrl": "",
+  "authorList": ["_F0RGE_"],
+  "credits": "_F0RGE_",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]

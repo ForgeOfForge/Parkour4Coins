@@ -1,0 +1,26 @@
+{ 
+  "vanilla_checkpoint": {
+    "sounds":["vanilla_checkpoint"],
+    "category": "weather"
+  },
+  "vanilla_complete": {
+    "sounds":["vanilla_complete"],
+    "category": "weather"
+  },
+  "sonic_checkpoint": {
+    "sounds":["sonic_checkpoint"],
+    "category": "weather"
+  },
+  "sonic_complete": {
+    "sounds":["sonic_complete"],
+    "category": "weather"
+  },
+  "mario_checkpoint": {
+    "sounds":["mario_checkpoint"],
+    "category": "weather"
+  },
+  "mario_complete": {
+    "sounds":["mario_complete"],
+    "category": "weather"
+  }
+}
