@@ -140,7 +140,7 @@ public class Parkour4Coins {
        // Info on how to share ghosts
        displayMessage(EnumChatFormatting.BOLD + "Upload your ghost file so others can race against you!");
        displayMessage(EnumChatFormatting.GRAY + "It's in your mods/Parkour4Coins/Ghosts directory.");
-       displayMessage(EnumChatFormatting.GRAY + "Copy the \"" + parkourName + "-GhostPositions.json\" file");
+       displayMessage(EnumChatFormatting.GRAY + "Copy the \"" + parkourName + "-GhostData.json\" file");
        displayMessage(EnumChatFormatting.GRAY + "and share it on Discord in #pb-alley!");
        displayMessage(EnumChatFormatting.BOLD + "------");
 	   
@@ -154,7 +154,7 @@ public class Parkour4Coins {
 	   } catch (Exception e) {
 	   }
        
-	   parkourData.saveGhostPositionsToFile(parkourName, ghostDataEntries, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-GhostPositions.json");
+	   parkourData.saveGhostPositionsToFile(parkourName, ghostDataEntries, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-GhostData.json");
    }
 
    
@@ -226,7 +226,7 @@ public class Parkour4Coins {
                    
                    // If record found, load ghost data
     	           ghostPlaybackIndex = 0;
-                   bestGhostData = parkourData.loadGhostDataFromFile(parkourName, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-GhostPositions.json");
+                   bestGhostData = parkourData.loadGhostDataFromFile(parkourName, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-GhostData.json");
                    ghostPlaybackTrigger = true;
                }
            }
