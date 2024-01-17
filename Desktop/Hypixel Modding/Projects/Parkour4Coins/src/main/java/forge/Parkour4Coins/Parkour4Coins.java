@@ -131,6 +131,19 @@ public class Parkour4Coins {
    }
    // Save ghost data
    private void saveGhostData(){
+	   // Link to PB sharing Discord channel
+       displayMessage(EnumChatFormatting.BOLD + "------");
+       IChatComponent linkMessage = new ChatComponentText(EnumChatFormatting.BOLD + "Share your run here! " + EnumChatFormatting.RESET + "https://discord.gg/mR5YA9CrAn");
+       ChatStyle chatStyle = new ChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://discord.gg/mR5YA9CrAn"));
+       linkMessage.setChatStyle(chatStyle);
+       Minecraft.getMinecraft().ingameGUI.getChatGUI().printChatMessage(linkMessage);
+       // Info on how to share ghosts
+       displayMessage(EnumChatFormatting.BOLD + "Upload your ghost file so others can race against you!");
+       displayMessage(EnumChatFormatting.GRAY + "It's in your mods/Parkour4Coins/Ghosts directory.");
+       displayMessage(EnumChatFormatting.GRAY + "Copy the \"" + parkourName + "-GhostPositions.json\" file");
+       displayMessage(EnumChatFormatting.GRAY + "and share it on Discord in #pb-alley!");
+       displayMessage(EnumChatFormatting.BOLD + "------");
+	   
 	   try {
 	       for (int i = 0; i < ghostPositions.size(); i++) {
 	           BlockPos position = ghostPositions.get(i);
@@ -140,7 +153,8 @@ public class Parkour4Coins {
 	       }
 	   } catch (Exception e) {
 	   }
-	   parkourData.saveGhostPositionsToFile(parkourName, ghostDataEntries, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-ghost_positions.json");
+       
+	   parkourData.saveGhostPositionsToFile(parkourName, ghostDataEntries, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-GhostPositions.json");
    }
 
    
@@ -212,7 +226,7 @@ public class Parkour4Coins {
                    
                    // If record found, load ghost data
     	           ghostPlaybackIndex = 0;
-                   bestGhostData = parkourData.loadGhostDataFromFile(parkourName, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-ghost_positions.json");
+                   bestGhostData = parkourData.loadGhostDataFromFile(parkourName, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-GhostPositions.json");
                    ghostPlaybackTrigger = true;
                }
            }
@@ -343,19 +357,6 @@ public class Parkour4Coins {
 
                saveGhostData();
            }
-           
-    	   // Link to PB sharing Discord channel
-           displayMessage(EnumChatFormatting.BOLD + "------");
-           IChatComponent linkMessage = new ChatComponentText(EnumChatFormatting.BOLD + "Share your run here! " + EnumChatFormatting.RESET + "https://discord.gg/mR5YA9CrAn");
-           ChatStyle chatStyle = new ChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://discord.gg/mR5YA9CrAn"));
-           linkMessage.setChatStyle(chatStyle);
-           Minecraft.getMinecraft().ingameGUI.getChatGUI().printChatMessage(linkMessage);
-           // Info on how to share ghosts
-           displayMessage(EnumChatFormatting.BOLD + "Upload your ghost file so others can race against you!");
-           displayMessage(EnumChatFormatting.GRAY + "It's in your mods/Parkour4Coins/Ghosts directory.");
-           displayMessage(EnumChatFormatting.GRAY + "Copy the \"" + parkourName + "-ghost_positions.json\" file");
-           displayMessage(EnumChatFormatting.GRAY + "and share it on Discord in #pb-alley!");
-           displayMessage(EnumChatFormatting.BOLD + "------");
            
            // Save data to file after updating
            saveDataToFile();
