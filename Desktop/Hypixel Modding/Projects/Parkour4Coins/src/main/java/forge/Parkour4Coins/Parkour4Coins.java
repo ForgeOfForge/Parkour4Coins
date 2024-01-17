@@ -9,14 +9,17 @@ import net.minecraft.client.particle.EffectRenderer;
 import net.minecraft.client.particle.EntityFX;
 import net.minecraft.entity.boss.BossStatus;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.event.ClickEvent;
 import net.minecraft.util.BlockPos;
 import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.ChatStyle;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.EnumParticleTypes;
 import net.minecraft.util.IChatComponent;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
+import net.minecraftforge.client.event.GuiScreenEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.living.LivingEvent;
@@ -33,9 +36,18 @@ import org.apache.commons.lang3.time.DurationFormatUtils;
 
 import forge.Parkour4Coins.ParkourData.GhostDataEntry;
 
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
 
 @Mod(
    modid = Parkour4Coins.MODID,
@@ -47,6 +59,7 @@ public class Parkour4Coins {
    public static final String VERSION = "1.0";
 
    private long startTime;
+   StringBuilder bestRunSplits;
    private long finishTime;
    private long timeElapsed;
    private int checkpointCounter;
@@ -54,20 +67,20 @@ public class Parkour4Coins {
    private int recordFound;
    private int speedMeasureDelay = 0;
    private String parkourName = "";
+   private String parkourNameMark = "";
+   private String activePlayerUsername = Minecraft.getMinecraft().getSession().getUsername();
    private String islandOwner = "";
    
    private boolean ghostRecord = false;
    private boolean ghostPlayback = false;
+   private boolean ghostPlaybackTrigger = false;
    private int ghostMeasureDelay = 0;
+   private int ghostMeasureTotal = 0;
    private List<BlockPos> ghostPositions = new ArrayList<>();
    private List<Long> ghostTimestamps = new ArrayList<>();
    private List<GhostDataEntry> bestGhostData = new ArrayList<>();
    List<GhostDataEntry> ghostDataEntries = new ArrayList<>();
-   private int ghostPlaybackIndex = 0; // Add this variable to keep track of the current playback index
-   private int ghostPlaybackDelay = 0;
-
-
-
+   private int ghostPlaybackIndex = 0;
 
    private StringBuilder activeCourse = new StringBuilder();
    private List<String> parkourTimesDB = new ArrayList<String>();
@@ -84,22 +97,53 @@ public class Parkour4Coins {
    List<Double> speedMeasurements = new ArrayList<>();
    private CustomSidebarElement customSidebarElement;
    
+   
    @EventHandler
    public void init(FMLInitializationEvent event) {
       MinecraftForge.EVENT_BUS.register(this);
       customSidebarElement = new CustomSidebarElement();
+      createDirectory();
 
       // Load data from a file at the start of the game
       parkourData = parkourData.loadFromFile("mods/Parkour4Coins/parkour_data.json");
       selectedSound = parkourData.loadSelectedSoundFromFile("mods/Parkour4Coins/selected_sound.json");
       System.out.println("Loaded selectedSound: " + selectedSound);
    }
+   
+   private void createDirectory(){
+	   // Create a File object for the directory
+	   String directoryPathRoot = "mods/Parkour4Coins";
+	   File directoryRoot = new File(directoryPathRoot);
+	   
+	   if (!directoryRoot.exists()) {
+	       boolean created = directoryRoot.mkdir(); // This method creates a single directory
+	       if (created) {
+	    	   String directoryPathGhosts = "mods/Parkour4Coins/Ghosts";
+	    	   File directoryGhosts = new File(directoryPathGhosts);
+		       directoryGhosts.mkdir(); // This method creates a single directory
+	       }
+	   }
+   }
 
    // Save data to the file when needed
    private void saveDataToFile() {
        parkourData.saveToFile("mods/Parkour4Coins/parkour_data.json");
    }
+   // Save ghost data
+   private void saveGhostData(){
+	   try {
+	       for (int i = 0; i < ghostPositions.size(); i++) {
+	           BlockPos position = ghostPositions.get(i);
+	           long timestamp = ghostTimestamps.get(i);
+	           GhostDataEntry ghostDataEntry = new GhostDataEntry(position, timestamp);
+	           ghostDataEntries.add(ghostDataEntry);
+	       }
+	   } catch (Exception e) {
+	   }
+	   parkourData.saveGhostPositionsToFile(parkourName, ghostDataEntries, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-ghost_positions.json");
+   }
 
+   
    @SubscribeEvent
    public void onChat(ClientChatReceivedEvent event) {
        String msg = event.message.getUnformattedText();
@@ -111,10 +155,12 @@ public class Parkour4Coins {
 
        if (msg.contains("Started parkour") && !msg.contains("]") || msg.contains("Reset time for parkour") && !msg.contains("]")) {
     	   // Start ghost recording in case run is a personal best
-    	   List<BlockPos> ghostPositions = new ArrayList<>();
-    	   List<BlockPos> ghostTimestamps = new ArrayList<>();
-    	   ghostPlayback = false;
+	       ghostPositions.clear();
+	       ghostTimestamps.clear();
+    	   ghostDataEntries.clear();
+    	   ghostPlaybackTrigger = false;
     	   ghostRecord = true;
+    	   ghostMeasureTotal = 0;
     	   
            EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
            String islandOwnerBossbar = BossStatus.bossName;
@@ -125,11 +171,10 @@ public class Parkour4Coins {
                        .filter(word -> word.contains("'"))
                        .toArray(String[]::new);
                islandOwner = String.join(" ", filteredWords);
+               if (!islandOwner.contains("'s")){
+            	   islandOwner = activePlayerUsername;
+               }
                islandOwner = islandOwner.replace("'s", "");
-               
-               // Now you can use the 'islandOwner' variable as needed
-           } else {
-        	   islandOwner = "?";
            }
 
            event.setCanceled(true);
@@ -141,6 +186,8 @@ public class Parkour4Coins {
            String parkourNameSpace = msg.replace("Started parkour", "").replace("Reset time for parkour", "");
            String parkourNameNoContext = parkourNameSpace.replace(" ", "");
            parkourName = islandOwner + "-" + parkourNameNoContext;
+           parkourName = parkourName.replace("§0","").replace("§1","").replace("§2","").replace("§3","").replace("§4","").replace("§5","").replace("§6","").replace("§7","").replace("§8","").replace("§9","").replace("§a","").replace("§b","").replace("§c","").replace("§d","").replace("§e","").replace("§f","");
+           parkourName = parkourName.replace("!", "");
            activeCourse.append(parkourName).append(", ");
            displayMessage(EnumChatFormatting.GOLD + "Starting " + parkourName);
            // Display best time details at start if available
@@ -151,22 +198,22 @@ public class Parkour4Coins {
             	   // If record found, display best splits and start ghost
                    String[] recordParts = record.split(", ");
                    int counter = 1;
-                   StringBuilder result = new StringBuilder();
+                   bestRunSplits = new StringBuilder();
                    for (int i = 1; i < recordParts.length; i++) {
                        String entry = recordParts[i];
                        String renamedEntry = "CP" + counter + ": ";
-                       result.append(renamedEntry).append(entry).append(", ");
+                       bestRunSplits.append(renamedEntry).append(entry).append(", ");
                        counter++;
                    }
                    String lastEntry = recordParts[recordParts.length - 1];
-                   result.replace(result.lastIndexOf("CP"), result.length(), "Finish: " + lastEntry);
+                   bestRunSplits.replace(bestRunSplits.lastIndexOf("CP"), bestRunSplits.length(), "Finish: " + lastEntry);
 
-                   displayMessage(EnumChatFormatting.GOLD + "Personal Best: " + result.toString());
+                   displayMessage(EnumChatFormatting.GOLD + "Your best run: " + bestRunSplits.toString());
                    
                    // If record found, load ghost data
-                   bestGhostData = parkourData.loadGhostDataFromFile(parkourName, "mods/Parkour4Coins/ghost_positions.json");
-            	   ghostPlayback = true;
-            	   displayMessage(EnumChatFormatting.GRAY + "" + EnumChatFormatting.ITALIC + "Ghost playback started");
+    	           ghostPlaybackIndex = 0;
+                   bestGhostData = parkourData.loadGhostDataFromFile(parkourName, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-ghost_positions.json");
+                   ghostPlaybackTrigger = true;
                }
            }
            startedParkourCounter++;
@@ -183,9 +230,7 @@ public class Parkour4Coins {
 
        if (msg.contains("Cancelled parkour!") && !msg.contains("]")) {
     	   ghostRecord = false;
-    	   ghostPositions.clear();
-    	   ghostTimestamps.clear();
-    	   ghostDataEntries.clear();
+    	   ghostPlayback = false;
            event.setCanceled(true);
            displayMessage(EnumChatFormatting.RED + "Parkour cancelled - Don't fly or use item abilities");
            startedParkourCounter = 0;
@@ -228,15 +273,17 @@ public class Parkour4Coins {
                        displayMessage(EnumChatFormatting.GREEN + " > CP " + checkpointCounter + " || " + formattedTime + " (+" + timeDifference + ")");
                        messageFlag = 1;
                    }
-                   if (messageFlag == 0) {
-                       displayMessage(EnumChatFormatting.GREEN + " > CP " + checkpointCounter + " || " + formattedTime + "(+0)");
-                   }
                }
            }
+           if (messageFlag == 0) {
+               displayMessage(EnumChatFormatting.GREEN + " > CP " + checkpointCounter + " || " + formattedTime + " (+0)");
+           }
        }
-
+       
+       String chatMessage = event.message.getUnformattedText();
        if (msg.contains("Finished parkour") && !msg.contains("]")) {
     	   ghostRecord = false;
+           ghostPlayback = false;
     	   
            messageFlag = 0;
            recordFound = 0;
@@ -268,20 +315,13 @@ public class Parkour4Coins {
                    if (activeTimeCompareInt < recordTimeCompareInt) {
                        playCompleteSound(selectedSound);
                        displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
-                       Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", formattedTime, 20, 60, 20);
+                       //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", "Your Time: 1:23.456", 20, 60, 20);
                        messageFlag = 1;
                        parkourData.getParkourRecordsDB().remove(line);
                        parkourData.getParkourRecordsDB().add(activeCourse.toString());
-                       // Save ghost data
-                       for (int i = 0; i < ghostPositions.size(); i++) {
-                           BlockPos position = ghostPositions.get(i);
-                           long timestamp = ghostTimestamps.get(i);
-                           GhostDataEntry ghostDataEntry = new GhostDataEntry(position, timestamp);
-                           ghostDataEntries.add(ghostDataEntry);
-                       }
 
-                       // Call the method with the correct arguments
-                       parkourData.saveGhostPositionsToFile(parkourName, ghostDataEntries, "mods/Parkour4Coins/ghost_positions.json");
+                       saveGhostData();
+                       
                 	   // Clear for next write
                        ghostPositions.clear();
                 	   ghostTimestamps.clear();
@@ -296,29 +336,46 @@ public class Parkour4Coins {
 
            if (recordFound == 0) {
                playCompleteSound(selectedSound);
-               displayMessage(EnumChatFormatting.GOLD + "Time to beat: " + formattedTime);
+               displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
+               Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", formattedTime, 20, 60, 20);
+               messageFlag = 1;
                parkourData.getParkourRecordsDB().add(activeCourse.toString());
-               // Save ghost data
-               for (int i = 0; i < ghostPositions.size(); i++) {
-                   BlockPos position = ghostPositions.get(i);
-                   long timestamp = ghostTimestamps.get(i);
-                   GhostDataEntry ghostDataEntry = new GhostDataEntry(position, timestamp);
-                   ghostDataEntries.add(ghostDataEntry);
-               }
 
-               // Call the method with the correct arguments
-               parkourData.saveGhostPositionsToFile(parkourName, ghostDataEntries, "mods/Parkour4Coins/ghost_positions.json");
-        	   // Clear for next write
-               ghostPositions.clear();
-        	   ghostTimestamps.clear();
-        	   ghostDataEntries.clear();
+               saveGhostData();
            }
-
+           
+    	   // Link to PB sharing Discord channel
+           displayMessage(EnumChatFormatting.BOLD + "------");
+           IChatComponent linkMessage = new ChatComponentText(EnumChatFormatting.BOLD + "Share your run here! " + EnumChatFormatting.RESET + "https://discord.gg/mR5YA9CrAn");
+           ChatStyle chatStyle = new ChatStyle().setChatClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://discord.gg/mR5YA9CrAn"));
+           linkMessage.setChatStyle(chatStyle);
+           Minecraft.getMinecraft().ingameGUI.getChatGUI().printChatMessage(linkMessage);
+           // Info on how to share ghosts
+           displayMessage(EnumChatFormatting.BOLD + "Upload your ghost file so others can race against you!");
+           displayMessage(EnumChatFormatting.GRAY + "It's in your mods/Parkour4Coins/Ghosts directory.");
+           displayMessage(EnumChatFormatting.GRAY + "Copy the \"" + parkourName + "-ghost_positions.json\" file");
+           displayMessage(EnumChatFormatting.GRAY + "and share it on Discord in #pb-alley!");
+           displayMessage(EnumChatFormatting.BOLD + "------");
+           
            // Save data to file after updating
            saveDataToFile();
        }
    }
 
+   @SubscribeEvent
+   public void onClientChatClickEvent(GuiScreenEvent.ActionPerformedEvent event) {
+       if (event.button != null && event.button.displayString.equals("[Click to copy your run information]")) {
+           String copyText = "This is the text to be copied to the clipboard"; // Replace with your desired text
+           setClipboard(copyText);
+       }
+   }
+
+   private void setClipboard(String text) {
+       StringSelection stringSelection = new StringSelection(text);
+       Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+       clipboard.setContents(stringSelection, null);
+   }
+   
    @SubscribeEvent
    public void onRenderGameOverlay(RenderGameOverlayEvent.Post event) {
        if (event.type == RenderGameOverlayEvent.ElementType.ALL) {
@@ -446,45 +503,58 @@ public class Parkour4Coins {
 			   }
 		   }
 	   }
-	   // Save player position data every half second for best time ghost
+	   // Save player position data every half second for best time ghost - stop at 10 minutes
 	   if (player != null) {
 		    ghostMeasureDelay++;
-		    if (ghostMeasureDelay >= 10 && ghostRecord) {
-		        ghostMeasureDelay = 0;
-		        BlockPos ghostCurrentPosition = player.getPosition();
-		        ghostPositions.add(ghostCurrentPosition);
-		        long currentTime = System.currentTimeMillis();
-		        ghostTimestamps.add(currentTime); // Move this line inside the if block
+		    // Stop ghost recordings at a set time
+		    if (ghostMeasureDelay >= 5 && ghostRecord) {
+		    	int maxGhostMeasurements = 2400; // Every 8 measurements is ONE second
+			    if (ghostMeasureTotal < maxGhostMeasurements){
+				    ghostMeasureTotal++;
+			        ghostMeasureDelay = 0;
+			        BlockPos ghostCurrentPosition = player.getPosition();
+			        ghostPositions.add(ghostCurrentPosition);
+			        long currentTime = System.currentTimeMillis();
+			        ghostTimestamps.add(currentTime);
+			    }
+			    if (ghostMeasureTotal == maxGhostMeasurements){
+				    ghostMeasureTotal++;
+				    displayMessage("Ghost recording stopped - max size reached (5 minutes)");
+			    }
 		    }
 	   }
 	   // Playback ghost at parkour start
 	   if (player != null) {
+		   if (ghostPlaybackTrigger){
+               ghostPlaybackTrigger = false;
+               ghostTimestamps.clear();
+			   ghostPlayback = true;
+		   }
+		   
 	       if (ghostPlayback && !bestGhostData.isEmpty() && ghostPlaybackIndex < bestGhostData.size()) {
-	    	   ghostPlaybackDelay = 0;
 	           ParkourData.GhostDataEntry ghostDataEntry = bestGhostData.get(ghostPlaybackIndex);
 	           long currentTime = System.currentTimeMillis();
-
-	           if (ghostTimestamps.size() > ghostPlaybackIndex + 1) {
-	               long timeDifference = ghostTimestamps.get(ghostPlaybackIndex + 1) - ghostTimestamps.get(ghostPlaybackIndex);
-	               	
-	               displayMessage(Long.toString(timeDifference));
-	               if (currentTime >= ghostTimestamps.get(ghostPlaybackIndex) && currentTime < ghostTimestamps.get(ghostPlaybackIndex + 1)) {
-	                   double progress = (double) (currentTime - ghostTimestamps.get(ghostPlaybackIndex)) / (double) timeDifference;
-
+	           
+	           if (ghostTimestamps.size() > ghostPlaybackIndex + 1) {	               	
+	        	   if (currentTime >= ghostTimestamps.get(ghostPlaybackIndex) && currentTime <= ghostTimestamps.get(ghostPlaybackIndex + 1)) {
+	                   
 	                   double x = ghostDataEntry.getPosition().getX();
 	                   double y = ghostDataEntry.getPosition().getY();
 	                   double z = ghostDataEntry.getPosition().getZ();
 
 	                   // Spawn the particle at the interpolated position
 	                   spawnParticlesAtPosition(x, y, z);
-	                   displayMessage("Spawning Particle at: " + x + " | " + y + " | " + z);
 
 	                   ghostPlaybackIndex++;
 	               } else if (currentTime >= ghostTimestamps.get(ghostPlaybackIndex + 1)) {
 	                   // Handle delay between particles
 	                   long delay = ghostTimestamps.get(ghostPlaybackIndex + 1) - ghostTimestamps.get(ghostPlaybackIndex);
-	                   ghostPlaybackDelay += delay / 10; // Add delay between particles
 	                   ghostPlaybackIndex++; // Move to the next ghost data entry
+	               }
+	               if (ghostPlaybackIndex >= bestGhostData.size()) {
+	                   // All data processed, set ghostPlayback to false
+	                   ghostPlayback = false;
+	                   ghostTimestamps.clear();
 	               }
 	           }
 	       }
@@ -492,13 +562,12 @@ public class Parkour4Coins {
    }
    
    private void spawnParticlesAtPosition(double x, double y, double z) {
-	    displayMessage("Rendering particles");
 	    World world = Minecraft.getMinecraft().theWorld;
 	    EffectRenderer particleManager = Minecraft.getMinecraft().effectRenderer;
 
-	    EnumParticleTypes particleType = EnumParticleTypes.CRIT; // Change this to the desired particle type
-	    int numParticles = 10; // Number of particles to spawn
-	    double yOffset = 1.0; // Offset above the target position
+	    EnumParticleTypes particleType = EnumParticleTypes.FLAME; // Change this to the desired particle type
+	    int numParticles = 1; // Number of particles to spawn
+	    double yOffset = 0.0; // Offset above the target position
 
 	    for (int i = 0; i < numParticles; i++) {
 	        double offsetX = world.rand.nextDouble() * 0.6 - 0.3; // Random X offset
@@ -525,5 +594,4 @@ public class Parkour4Coins {
 	        }
 	    }
 	}
-
 }
