@@ -1,15 +1,19 @@
 package forge.Parkour4Coins;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.command.CommandException;
 import net.minecraft.client.audio.PositionedSoundRecord;
 import net.minecraft.client.entity.EntityPlayerSP;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.particle.EffectRenderer;
 import net.minecraft.client.particle.EntityFX;
+import net.minecraft.command.CommandException;
+import net.minecraft.command.ICommandSender;
 import net.minecraft.entity.boss.BossStatus;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.event.ClickEvent;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.BlockPos;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.ChatStyle;
@@ -27,6 +31,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.Mod.EventHandler;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
@@ -97,6 +102,20 @@ public class Parkour4Coins {
    List<Double> speedMeasurements = new ArrayList<>();
    private CustomSidebarElement customSidebarElement;
    
+   // Commands
+   boolean parkourSpawn = false;
+   int parkourSpawnDelay = 0;
+   boolean parkourGhost = true;
+   boolean parkourSplits = false;
+   boolean parkourHud = true;
+   boolean parkourStart = false;
+   boolean parkourEnd = false;
+   private static BlockPos startPosition = null;
+   private static BlockPos endPosition = null;
+   long segmentStartTime;
+   long segmentEndTime;
+   boolean distanceToEndTold;
+   
    
    @EventHandler
    public void init(FMLInitializationEvent event) {
@@ -108,7 +127,8 @@ public class Parkour4Coins {
       parkourData = parkourData.loadFromFile("mods/Parkour4Coins/parkour_data.json");
       selectedSound = parkourData.loadSelectedSoundFromFile("mods/Parkour4Coins/selected_sound.json");
       System.out.println("Loaded selectedSound: " + selectedSound);
-   }
+      
+      }
    
    private void createDirectory(){
 	   // Create a File object for the directory
@@ -166,6 +186,71 @@ public class Parkour4Coins {
        for (String entry : parkourData.getParkourTimesDB()) {
            //Minecraft.getMinecraft().thePlayer.addChatComponentMessage(new ChatComponentText(entry));
        }
+       
+       if (msg.contains("parkourhelp") && !msg.contains("]") || msg.contains("phelp") && !msg.contains("]")) {
+           event.setCanceled(true);
+           displayMessage(EnumChatFormatting.BOLD + "Available Parkour4Coins Commands");
+           displayMessage(EnumChatFormatting.BOLD  + "/parkourspawn " + EnumChatFormatting.RESET + "- Warps away then /visits automatically to prevent errors from warping too quickly");
+           displayMessage(EnumChatFormatting.BOLD  + "/parkoursound " + EnumChatFormatting.RESET + "- Change the checkpoint and completion sounds");
+           displayMessage(EnumChatFormatting.BOLD  + "/parkourghost " + EnumChatFormatting.RESET + "- Toggle the fire trail best-time ghost");
+           displayMessage(EnumChatFormatting.BOLD  + "/parkoursplits " + EnumChatFormatting.RESET + "- Toggle the list of splits when starting a course");
+           displayMessage(EnumChatFormatting.BOLD  + "/parkourhud " + EnumChatFormatting.RESET + "- Toggle the hud in the top-right");
+           displayMessage(EnumChatFormatting.BOLD  + "/parkourstart " + EnumChatFormatting.RESET + "- Set the starting positon for a segment test");
+           displayMessage(EnumChatFormatting.BOLD  + "/parkourend " + EnumChatFormatting.RESET + "- Set the ending positon for a segment test");
+       }
+       
+       if (msg.contains("parkourspawn") && !msg.contains("]") || msg.contains("pspawn") && !msg.contains("]")) {
+           event.setCanceled(true);
+           displayMessage("Attempting to warp to " + islandOwner + "'s island spawn");
+           parkourSpawn = true;
+           parkourSpawnDelay = 0;
+       }
+       
+       if (msg.contains("parkoursound") && !msg.contains("]") || msg.contains("psound") && !msg.contains("]")) {
+           event.setCanceled(true);
+           selectedSound++;
+           startedParkourCounter = 0;
+           parkourData.saveSelectedSoundToFile("mods/Parkour4Coins/selected_sound.json", selectedSound);
+           playCheckpointSound(selectedSound);
+
+           if (selectedSound > 3) {
+               selectedSound = 1;
+           }
+       }
+       
+       if (msg.contains("parkourghost") && !msg.contains("]") || msg.contains("pghost") && !msg.contains("]")) {
+           event.setCanceled(true);
+           parkourGhost = !parkourGhost;
+           displayMessage("Ghost playback: " + parkourGhost);
+       }
+       
+       if (msg.contains("parkoursplits") && !msg.contains("]") || msg.contains("psplits") && !msg.contains("]")) {
+           event.setCanceled(true);
+           parkourSplits = !parkourSplits;
+           displayMessage("Parkour splits at start: " + parkourSplits);
+       }
+       
+       if (msg.contains("parkourhud") && !msg.contains("]") || msg.contains("phud") && !msg.contains("]")) {
+           event.setCanceled(true);
+           parkourHud = !parkourHud;
+           displayMessage("Parkour hud: " + parkourHud);
+       }
+       
+       if (msg.contains("parkourstart") && !msg.contains("]") || msg.contains("pstart") && !msg.contains("]")) {
+           event.setCanceled(true);
+           parkourStart = true;
+	       EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+           startPosition = player.getPosition(); // Store the player's position
+           displayMessage("Start set: " + startPosition);
+       }
+       
+       if (msg.contains("parkourend") && !msg.contains("]") || msg.contains("pend") && !msg.contains("]")) {
+           event.setCanceled(true);
+           parkourEnd = true;
+	       EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+           endPosition = player.getPosition(); // Store the player's position
+           displayMessage("End set: " + endPosition);
+       }
 
        if (msg.contains("Started parkour") && !msg.contains("]") || msg.contains("Reset time for parkour") && !msg.contains("]")) {
     	   // Start ghost recording in case run is a personal best
@@ -222,24 +307,19 @@ public class Parkour4Coins {
                    String lastEntry = recordParts[recordParts.length - 1];
                    bestRunSplits.replace(bestRunSplits.lastIndexOf("CP"), bestRunSplits.length(), "Finish: " + lastEntry);
 
-                   displayMessage(EnumChatFormatting.GOLD + "Your best run: " + bestRunSplits.toString());
+                   if (parkourSplits){
+                       displayMessage(EnumChatFormatting.GOLD + "Your best run: " + bestRunSplits.toString());
+                   }
                    
                    // If record found, load ghost data
     	           ghostPlaybackIndex = 0;
                    bestGhostData = parkourData.loadGhostDataFromFile(parkourName, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-GhostData.json");
-                   ghostPlaybackTrigger = true;
+                   if (parkourGhost){
+                       ghostPlaybackTrigger = true;
+                   }
                }
            }
            startedParkourCounter++;
-           if (startedParkourCounter >= 10){
-               selectedSound++;
-               startedParkourCounter = 0;
-               parkourData.saveSelectedSoundToFile("mods/Parkour4Coins/selected_sound.json", selectedSound);
-           }
-
-           if (selectedSound > 3) {
-               selectedSound = 1;
-           }
        }
 
        if (msg.contains("Cancelled parkour!") && !msg.contains("]")) {
@@ -268,22 +348,25 @@ public class Parkour4Coins {
 
                if (parkourTimesDBComponents[0].contains(courseNameParts[0])) {
                    String[] activeTime = formattedTime.split("[:.]");
-                   String activeTimeCompare = String.join("", activeTime);
-                   String trimmedActiveTimeCompare = activeTimeCompare.trim();
-                   int activeTimeCompareInt = Integer.parseInt(trimmedActiveTimeCompare);
-
+                   int minutes = Integer.parseInt(activeTime[0]);
+                   int seconds = Integer.parseInt(activeTime[1]);
+                   int milliseconds = Integer.parseInt(activeTime[2]);
+                   // Calculate the total time in milliseconds
+                   long activeTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+                   
                    String[] recordTime = parkourTimesDBComponents[checkpointCounter].split("[:.]");
-                   String recordTimeCompare = String.join("", recordTime);
-                   String trimmedRecordTimeCompare = recordTimeCompare.trim();
-                   int recordTimeCompareInt = Integer.parseInt(trimmedRecordTimeCompare);
-
-                   if (activeTimeCompareInt < recordTimeCompareInt) {
-                       timeDifference = activeTimeCompareInt - recordTimeCompareInt;
+                   minutes = Integer.parseInt(recordTime[0].replace(" ",""));
+                   seconds = Integer.parseInt(recordTime[1].replace(" ",""));
+                   milliseconds = Integer.parseInt(recordTime[2].replace(" ",""));
+                   // Calculate the total time in milliseconds
+                   long recordTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+                   timeDifference = activeTimeCompare - recordTimeCompare;
+                   
+                   if (activeTimeCompare < recordTimeCompare) {
                        displayMessage(EnumChatFormatting.GOLD + " > CP " + checkpointCounter + " || " + formattedTime + " (" + timeDifference + ")");
                        messageFlag = 1;
                    }
-                   if (activeTimeCompareInt >= recordTimeCompareInt) {
-                       timeDifference = activeTimeCompareInt - recordTimeCompareInt;
+                   if (activeTimeCompare >= recordTimeCompare) {
                        displayMessage(EnumChatFormatting.GREEN + " > CP " + checkpointCounter + " || " + formattedTime + " (+" + timeDifference + ")");
                        messageFlag = 1;
                    }
@@ -316,17 +399,20 @@ public class Parkour4Coins {
                if (parkourTimesDBComponents[0].contains(courseNameParts[0])) {
                    recordFound = 1;
                    String[] activeTime = formattedTime.split("[:.]");
-                   String activeTimeCompare = String.join("", activeTime);
-                   String trimmedActiveTimeCompare = activeTimeCompare.trim();
-                   int activeTimeCompareInt = Integer.parseInt(trimmedActiveTimeCompare);
+                   int minutes = Integer.parseInt(activeTime[0]);
+                   int seconds = Integer.parseInt(activeTime[1]);
+                   int milliseconds = Integer.parseInt(activeTime[2]);
+                   // Calculate the total time in milliseconds
+                   long activeTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+                   
+                   String[] recordTime = parkourTimesDBComponents[checkpointCounter].split("[:.]");
+                   minutes = Integer.parseInt(recordTime[0].replace(" ",""));
+                   seconds = Integer.parseInt(recordTime[1].replace(" ",""));
+                   milliseconds = Integer.parseInt(recordTime[2].replace(" ",""));
+                   // Calculate the total time in milliseconds
+                   long recordTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
 
-                   String[] recordTime = parkourTimesDBComponents[parkourTimesDBComponents.length - 1].split("[:.]");
-                   String recordTimeCompare = String.join("", recordTime);
-                   String trimmedRecordTimeCompare = recordTimeCompare.trim();
-                   int recordTimeCompareInt = Integer.parseInt(trimmedRecordTimeCompare);
-            	   timeDifference = activeTimeCompareInt - recordTimeCompareInt;
-
-                   if (activeTimeCompareInt < recordTimeCompareInt) {
+                   if (activeTimeCompare < recordTimeCompare) {
                        playCompleteSound(selectedSound);
                        displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
                        //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", "Your Time: 1:23.456", 20, 60, 20);
@@ -351,7 +437,7 @@ public class Parkour4Coins {
            if (recordFound == 0) {
                playCompleteSound(selectedSound);
                displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
-               Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", formattedTime, 20, 60, 20);
+               //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", formattedTime, 20, 60, 20);
                messageFlag = 1;
                parkourData.getParkourRecordsDB().add(activeCourse.toString());
 
@@ -387,21 +473,23 @@ public class Parkour4Coins {
    private class CustomSidebarElement {
        @SideOnly(Side.CLIENT)
        public void render() {
-           Minecraft mc = Minecraft.getMinecraft();
-           ScaledResolution scaledResolution = new ScaledResolution(mc);
-           int width = scaledResolution.getScaledWidth();
-           int height = scaledResolution.getScaledHeight();
-           int yOffset = 0; // Adjust this value to set the Y position of your sidebar
-           Gui.drawRect(width - 50, yOffset, width, yOffset + 21, 0x99000000); // Sidebar background color
+    	   if (parkourHud){
+               Minecraft mc = Minecraft.getMinecraft();
+               ScaledResolution scaledResolution = new ScaledResolution(mc);
+               int width = scaledResolution.getScaledWidth();
+               int height = scaledResolution.getScaledHeight();
+               int yOffset = 0; // Adjust this value to set the Y position of your sidebar
+               Gui.drawRect(width - 50, yOffset, width, yOffset + 21, 0x99000000); // Sidebar background color
 
-           String timeDifferenceString = (timeDifference >= 0) ? "+" + timeDifference : String.valueOf(timeDifference);
-           String speedString = String.format("%.0f%%", Math.ceil(playerSpeedPercentage));
+               String timeDifferenceString = (timeDifference >= 0) ? "+" + timeDifference : String.valueOf(timeDifference);
+               String speedString = String.format("%.0f%%", Math.ceil(playerSpeedPercentage));
 
-           mc.fontRendererObj.drawStringWithShadow(EnumChatFormatting.GOLD + timeDifferenceString, width - 50, yOffset + 2, 0xFFFFFF);
-           if (timeDifferenceString.contains("+")){
-               mc.fontRendererObj.drawStringWithShadow(EnumChatFormatting.RED + timeDifferenceString, width - 50, yOffset + 2, 0xFFFFFF);
-           }
-           mc.fontRendererObj.drawStringWithShadow(EnumChatFormatting.GRAY + speedString, width - 50, yOffset + 12, 0xFFFFFF);
+               mc.fontRendererObj.drawStringWithShadow(EnumChatFormatting.GOLD + timeDifferenceString, width - 50, yOffset + 2, 0xFFFFFF);
+               if (timeDifferenceString.contains("+")){
+                   mc.fontRendererObj.drawStringWithShadow(EnumChatFormatting.RED + timeDifferenceString, width - 50, yOffset + 2, 0xFFFFFF);
+               }
+               mc.fontRendererObj.drawStringWithShadow(EnumChatFormatting.GRAY + speedString, width - 50, yOffset + 12, 0xFFFFFF);
+    	   }
        }
    }
 
@@ -480,6 +568,45 @@ public class Parkour4Coins {
 	}
    @SubscribeEvent
    public void onClientTick(TickEvent.ClientTickEvent event) {
+	   // parkourspawn command
+	   if (parkourSpawn){
+	       EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+		   parkourSpawnDelay++;
+		   if (parkourSpawnDelay == 1){
+		       player.sendChatMessage("/is");
+		   }
+		   if (parkourSpawnDelay >= 110){
+		       player.sendChatMessage("/visit " + islandOwner);
+		       parkourSpawn = false;
+		       parkourSpawnDelay = 0;
+		   }
+	   }
+	   
+	   // parkour start/end commands
+	   if (parkourStart && parkourEnd){
+           int startSoundDelay = 0;
+		   // Measure if player is near the marked end
+	       EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+           double distanceToStart = player.getDistance(startPosition.getX(), startPosition.getY(), startPosition.getZ());
+           double distanceToEnd = player.getDistance(endPosition.getX(), endPosition.getY(), endPosition.getZ());
+           // Display where start and end are
+           spawnParticlesAtPosition(startPosition.getX(), startPosition.getY(), startPosition.getZ());
+           spawnParticlesAtPosition(endPosition.getX(), endPosition.getY(), endPosition.getZ());
+           if (distanceToStart < 1.0) {
+               segmentStartTime = System.currentTimeMillis();
+               distanceToEndTold = false;
+               displayMessage("At start of segment");
+           }
+           if (distanceToEnd < 1.0){
+        	   if (!distanceToEndTold){
+            	   segmentEndTime = System.currentTimeMillis();
+            	   long segmentFinishTime = segmentEndTime - segmentStartTime;
+            	   displayMessage("Time to reach end: " + segmentFinishTime);
+            	   distanceToEndTold = true;
+        	   }
+           }
+	   }
+
 	   // Find player speed for updating the GUI
 	   EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
 	   if (player != null) {
