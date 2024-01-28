@@ -405,83 +405,83 @@ public class Parkour4Coins {
                    displayMessage(EnumChatFormatting.GREEN + " > CP " + checkpointCounter + " || " + formattedTime + " (+0)");
                }
            }
+       }
            
            String chatMessage = event.message.getUnformattedText();
-           if (msg.contains("Finished parkour") && !msg.contains("]")) {
-        	   if (parkourInstant){
-                   event.setCanceled(true);
-        	   }
-        	   if (!parkourInstant){
-            	   ghostRecord = false;
-                   ghostPlayback = false;
-                   parkourActive = false;
-            	   
-                   messageFlag = 0;
-                   recordFound = 0;
-                   playCheckpointSound(selectedSound);
-                   finishTime = System.currentTimeMillis();
-                   timeElapsed = finishTime - startTime;
-                   String formattedTime = DurationFormatUtils.formatDuration(timeElapsed, "mm:ss.SSS");
-                   activeCourse.append(formattedTime);
-                   parkourData.getParkourTimesDB().add(activeCourse.toString());
+       if (msg.contains("Finished parkour") && !msg.contains("]")) {
+    	   if (parkourInstant){
+               event.setCanceled(true);
+    	   }
+    	   if (!parkourInstant){
+        	   ghostRecord = false;
+               ghostPlayback = false;
+               parkourActive = false;
+        	   
+               messageFlag = 0;
+               recordFound = 0;
+               playCheckpointSound(selectedSound);
+               finishTime = System.currentTimeMillis();
+               timeElapsed = finishTime - startTime;
+               String formattedTime = DurationFormatUtils.formatDuration(timeElapsed, "mm:ss.SSS");
+               activeCourse.append(formattedTime);
+               parkourData.getParkourTimesDB().add(activeCourse.toString());
 
-                   for (String line : parkourData.getParkourRecordsDB()) {
-                       String[] parkourTimesDBComponents = line.split(",");
-                       String courseNameString = activeCourse.toString();
-                       String[] courseNameParts = courseNameString.split(",");
+               for (String line : parkourData.getParkourRecordsDB()) {
+                   String[] parkourTimesDBComponents = line.split(",");
+                   String courseNameString = activeCourse.toString();
+                   String[] courseNameParts = courseNameString.split(",");
 
-                       if (parkourTimesDBComponents[0].contains(courseNameParts[0])) {
-                           recordFound = 1;
-                           String[] activeTime = formattedTime.split("[:.]");
-                           int minutes = Integer.parseInt(activeTime[0]);
-                           int seconds = Integer.parseInt(activeTime[1]);
-                           int milliseconds = Integer.parseInt(activeTime[2]);
-                           // Calculate the total time in milliseconds
-                           long activeTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+                   if (parkourTimesDBComponents[0].contains(courseNameParts[0])) {
+                       recordFound = 1;
+                       String[] activeTime = formattedTime.split("[:.]");
+                       int minutes = Integer.parseInt(activeTime[0]);
+                       int seconds = Integer.parseInt(activeTime[1]);
+                       int milliseconds = Integer.parseInt(activeTime[2]);
+                       // Calculate the total time in milliseconds
+                       long activeTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+                       
+                       String[] recordTime = parkourTimesDBComponents[checkpointCounter].split("[:.]");
+                       minutes = Integer.parseInt(recordTime[0].replace(" ",""));
+                       seconds = Integer.parseInt(recordTime[1].replace(" ",""));
+                       milliseconds = Integer.parseInt(recordTime[2].replace(" ",""));
+                       // Calculate the total time in milliseconds
+                       long recordTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+
+                       if (activeTimeCompare < recordTimeCompare) {
+                           playCompleteSound(selectedSound);
+                           displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
+                           //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", "Your Time: 1:23.456", 20, 60, 20);
+                           messageFlag = 1;
+                           parkourData.getParkourRecordsDB().remove(line);
+                           parkourData.getParkourRecordsDB().add(activeCourse.toString());
+
+                           saveGhostData();
                            
-                           String[] recordTime = parkourTimesDBComponents[checkpointCounter].split("[:.]");
-                           minutes = Integer.parseInt(recordTime[0].replace(" ",""));
-                           seconds = Integer.parseInt(recordTime[1].replace(" ",""));
-                           milliseconds = Integer.parseInt(recordTime[2].replace(" ",""));
-                           // Calculate the total time in milliseconds
-                           long recordTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
-
-                           if (activeTimeCompare < recordTimeCompare) {
-                               playCompleteSound(selectedSound);
-                               displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
-                               //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", "Your Time: 1:23.456", 20, 60, 20);
-                               messageFlag = 1;
-                               parkourData.getParkourRecordsDB().remove(line);
-                               parkourData.getParkourRecordsDB().add(activeCourse.toString());
-
-                               saveGhostData();
-                               
-                        	   // Clear for next write
-                               ghostPositions.clear();
-                        	   ghostTimestamps.clear();
-                        	   ghostDataEntries.clear();
-                           }
+                    	   // Clear for next write
+                           ghostPositions.clear();
+                    	   ghostTimestamps.clear();
+                    	   ghostDataEntries.clear();
                        }
                    }
+               }
 
-                   if (messageFlag == 0) {
-                       displayMessage(EnumChatFormatting.GREEN + "Course completed in (realtime): " + formattedTime);
-                   }
+               if (messageFlag == 0) {
+                   displayMessage(EnumChatFormatting.GREEN + "Course completed in (realtime): " + formattedTime);
+               }
 
-                   if (recordFound == 0) {
-                       playCompleteSound(selectedSound);
-                       displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
-                       //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", formattedTime, 20, 60, 20);
-                       messageFlag = 1;
-                       parkourData.getParkourRecordsDB().add(activeCourse.toString());
+               if (recordFound == 0) {
+                   playCompleteSound(selectedSound);
+                   displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
+                   //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", formattedTime, 20, 60, 20);
+                   messageFlag = 1;
+                   parkourData.getParkourRecordsDB().add(activeCourse.toString());
 
-                       saveGhostData();
-                   }
-                   
-                   // Save data to file after updating
-                   saveDataToFile();
-        	   }
-           }
+                   saveGhostData();
+               }
+               
+               // Save data to file after updating
+               saveDataToFile();
+    	   }
        }
    }
 
