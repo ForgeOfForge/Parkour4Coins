@@ -1,5 +1,6 @@
 package forge.Parkour4Coins;
 
+import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.command.CommandException;
 import net.minecraft.client.audio.PositionedSoundRecord;
@@ -10,9 +11,12 @@ import net.minecraft.client.particle.EffectRenderer;
 import net.minecraft.client.particle.EntityFX;
 import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.boss.BossStatus;
+import net.minecraft.entity.item.EntityArmorStand;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.event.ClickEvent;
+import net.minecraft.init.Blocks;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.BlockPos;
 import net.minecraft.util.ChatComponentText;
@@ -62,7 +66,7 @@ import java.net.URL;
 public class Parkour4Coins {
    public static final String MODID = "Parkour4Coins";
    public static final String VERSION = "1.0";
-
+   
    private long startTime;
    StringBuilder bestRunSplits;
    private long finishTime;
@@ -115,7 +119,13 @@ public class Parkour4Coins {
    long segmentStartTime;
    long segmentEndTime;
    boolean distanceToEndTold;
-   
+   boolean parkourInstant = false;
+   boolean parkourActive = false;
+   int instantCheckpoint = 0;
+   long instantStartTime;
+   int instantDistance = 5;
+   boolean instantParkourEnd = false;
+   String customNamePrevious;
    
    @EventHandler
    public void init(FMLInitializationEvent event) {
@@ -197,6 +207,7 @@ public class Parkour4Coins {
            displayMessage(EnumChatFormatting.BOLD  + "/parkourhud " + EnumChatFormatting.RESET + "- Toggle the hud in the top-right");
            displayMessage(EnumChatFormatting.BOLD  + "/parkourstart " + EnumChatFormatting.RESET + "- Set the starting positon for a segment test");
            displayMessage(EnumChatFormatting.BOLD  + "/parkourend " + EnumChatFormatting.RESET + "- Set the ending positon for a segment test");
+           displayMessage(EnumChatFormatting.BOLD  + "/parkourinstant " + EnumChatFormatting.RESET + "- Toggle simulated instant plates");
        }
        
        if (msg.contains("parkourspawn") && !msg.contains("]") || msg.contains("pspawn") && !msg.contains("]")) {
@@ -239,7 +250,7 @@ public class Parkour4Coins {
        if (msg.contains("parkourstart") && !msg.contains("]") || msg.contains("pstart") && !msg.contains("]")) {
            event.setCanceled(true);
            parkourStart = true;
-	       EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+           EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
            startPosition = player.getPosition(); // Store the player's position
            displayMessage("Start set: " + startPosition);
        }
@@ -249,203 +260,228 @@ public class Parkour4Coins {
            parkourEnd = true;
 	       EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
            endPosition = player.getPosition(); // Store the player's position
+           distanceToEndTold = true;
            displayMessage("End set: " + endPosition);
        }
+       
+       if (msg.contains("parkourinstant") && !msg.contains("]") || msg.contains("pinstant") && !msg.contains("]")) {
+	       EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+    	   event.setCanceled(true);
+           parkourInstant = !parkourInstant;
+           displayMessage("Simulated Instant Plates: " + parkourInstant);
+       }
 
-       if (msg.contains("Started parkour") && !msg.contains("]") || msg.contains("Reset time for parkour") && !msg.contains("]")) {
-    	   // Start ghost recording in case run is a personal best
-	       ghostPositions.clear();
-	       ghostTimestamps.clear();
-    	   ghostDataEntries.clear();
-    	   ghostPlaybackTrigger = false;
-    	   ghostRecord = true;
-    	   ghostMeasureTotal = 0;
-    	   
-           EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
-           String islandOwnerBossbar = BossStatus.bossName;
-           // Check if the boss bar name is not empty or null
-           if (islandOwnerBossbar != null && !islandOwnerBossbar.isEmpty()) {
-               String[] islandOwnerBossbarSplit = islandOwnerBossbar.split(" ");
-               String[] filteredWords = Arrays.stream(islandOwnerBossbarSplit)
-                       .filter(word -> word.contains("'"))
-                       .toArray(String[]::new);
-               islandOwner = String.join(" ", filteredWords);
-               if (!islandOwner.contains("'s")){
-            	   islandOwner = activePlayerUsername;
-               }
-               islandOwner = islandOwner.replace("'s", "");
-           }
-
+       if (parkourInstant && !msg.contains("]") && msg.contains("You haven't started parkour") || msg.contains("Wrong checkpoint for parkour") || msg.contains("You haven't reached all checkpoints for parkour")) {
            event.setCanceled(true);
-           resetActiveCourse();
-           playCheckpointSound(selectedSound);
-           startTime = System.currentTimeMillis();
-           checkpointCounter = 0;
-
-           String parkourNameSpace = msg.replace("Started parkour", "").replace("Reset time for parkour", "");
-           String parkourNameNoContext = parkourNameSpace.replace(" ", "");
-           parkourName = islandOwner + "-" + parkourNameNoContext;
-           parkourName = parkourName.replace("§0","").replace("§1","").replace("§2","").replace("§3","").replace("§4","").replace("§5","").replace("§6","").replace("§7","").replace("§8","").replace("§9","").replace("§a","").replace("§b","").replace("§c","").replace("§d","").replace("§e","").replace("§f","");
-           parkourName = parkourName.replace("!", "");
-           activeCourse.append(parkourName).append(", ");
-           displayMessage(EnumChatFormatting.GOLD + "Starting " + parkourName);
-           // Display best time details at start if available
-           for (String record : parkourData.getParkourRecordsDB()) {
-               String[] parts = record.split(",");
-               String recordCourseName = parts[0].trim();
-               if (recordCourseName.equals(parkourName)){
-            	   // If record found, display best splits and start ghost
-                   String[] recordParts = record.split(", ");
-                   int counter = 1;
-                   bestRunSplits = new StringBuilder();
-                   for (int i = 1; i < recordParts.length; i++) {
-                       String entry = recordParts[i];
-                       String renamedEntry = "CP" + counter + ": ";
-                       bestRunSplits.append(renamedEntry).append(entry).append(", ");
-                       counter++;
+       }
+       
+       if (msg.contains("Started parkour") && !msg.contains("]") || msg.contains("Reset time for parkour") && !msg.contains("]")) {
+           event.setCanceled(true);
+           if (!parkourInstant){
+        	   // Start ghost recording in case run is a personal best
+    	       ghostPositions.clear();
+    	       ghostTimestamps.clear();
+        	   ghostDataEntries.clear();
+        	   ghostPlaybackTrigger = false;
+        	   ghostRecord = true;
+        	   ghostMeasureTotal = 0;
+        	   parkourActive = true;
+        	   
+               String islandOwnerBossbar = BossStatus.bossName;
+               // Check if the boss bar name is not empty or null
+               if (islandOwnerBossbar != null && !islandOwnerBossbar.isEmpty()) {
+                   String[] islandOwnerBossbarSplit = islandOwnerBossbar.split(" ");
+                   String[] filteredWords = Arrays.stream(islandOwnerBossbarSplit)
+                           .filter(word -> word.contains("'"))
+                           .toArray(String[]::new);
+                   islandOwner = String.join(" ", filteredWords);
+                   if (!islandOwner.contains("'s")){
+                	   islandOwner = activePlayerUsername;
                    }
-                   String lastEntry = recordParts[recordParts.length - 1];
-                   bestRunSplits.replace(bestRunSplits.lastIndexOf("CP"), bestRunSplits.length(), "Finish: " + lastEntry);
+                   islandOwner = islandOwner.replace("'s", "");
+               }
 
-                   if (parkourSplits){
-                       displayMessage(EnumChatFormatting.GOLD + "Your best run: " + bestRunSplits.toString());
-                   }
-                   
-                   // If record found, load ghost data
-    	           ghostPlaybackIndex = 0;
-                   bestGhostData = parkourData.loadGhostDataFromFile(parkourName, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-GhostData.json");
-                   if (parkourGhost){
-                       ghostPlaybackTrigger = true;
+               resetActiveCourse();
+               playCheckpointSound(selectedSound);
+               startTime = System.currentTimeMillis();
+               checkpointCounter = 0;
+
+               String parkourNameSpace = msg.replace("Started parkour", "").replace("Reset time for parkour", "");
+               String parkourNameNoContext = parkourNameSpace.replace(" ", "");
+               parkourName = islandOwner + "-" + parkourNameNoContext;
+               parkourName = parkourName.replace("§0","").replace("§1","").replace("§2","").replace("§3","").replace("§4","").replace("§5","").replace("§6","").replace("§7","").replace("§8","").replace("§9","").replace("§a","").replace("§b","").replace("§c","").replace("§d","").replace("§e","").replace("§f","");
+               parkourName = parkourName.replace("!", "");
+               activeCourse.append(parkourName).append(", ");
+               displayMessage(EnumChatFormatting.GOLD + "Starting " + parkourName);
+               // Display best time details at start if available
+               for (String record : parkourData.getParkourRecordsDB()) {
+                   String[] parts = record.split(",");
+                   String recordCourseName = parts[0].trim();
+                   if (recordCourseName.equals(parkourName)){
+                	   // If record found, display best splits and start ghost
+                       String[] recordParts = record.split(", ");
+                       int counter = 1;
+                       bestRunSplits = new StringBuilder();
+                       for (int i = 1; i < recordParts.length; i++) {
+                           String entry = recordParts[i];
+                           String renamedEntry = "CP" + counter + ": ";
+                           bestRunSplits.append(renamedEntry).append(entry).append(", ");
+                           counter++;
+                       }
+                       String lastEntry = recordParts[recordParts.length - 1];
+                       bestRunSplits.replace(bestRunSplits.lastIndexOf("CP"), bestRunSplits.length(), "Finish: " + lastEntry);
+
+                       if (parkourSplits){
+                           displayMessage(EnumChatFormatting.GOLD + "Your best run: " + bestRunSplits.toString());
+                       }
+                       
+                       // If record found, load ghost data
+        	           ghostPlaybackIndex = 0;
+                       bestGhostData = parkourData.loadGhostDataFromFile(parkourName, "mods/Parkour4Coins/Ghosts/" + parkourName +  "-GhostData.json");
+                       if (parkourGhost){
+                           ghostPlaybackTrigger = true;
+                       }
                    }
                }
+               startedParkourCounter++;
            }
-           startedParkourCounter++;
        }
 
        if (msg.contains("Cancelled parkour!") && !msg.contains("]")) {
-    	   ghostRecord = false;
-    	   ghostPlayback = false;
            event.setCanceled(true);
-           displayMessage(EnumChatFormatting.RED + "Parkour cancelled - Don't fly or use item abilities");
-           startedParkourCounter = 0;
+           if (!parkourInstant){
+        	   ghostRecord = false;
+        	   ghostPlayback = false;
+        	   parkourActive = false;
+               displayMessage(EnumChatFormatting.RED + "Parkour cancelled - Don't fly or use item abilities");
+               startedParkourCounter = 0;  
+           }
        }
 
        if (msg.contains("Reached checkpoint #") && !msg.contains("]")) {
            event.setCanceled(true);
-           startedParkourCounter = 0;
-           messageFlag = 0;
-           playCheckpointSound(selectedSound);
-           checkpointCounter++;
-           finishTime = System.currentTimeMillis();
-           timeElapsed = finishTime - startTime;
-           String formattedTime = DurationFormatUtils.formatDuration(timeElapsed, "mm:ss.SSS");
-           activeCourse.append(formattedTime).append(", ");
+           if (!parkourInstant){
+               startedParkourCounter = 0;
+               messageFlag = 0;
+               playCheckpointSound(selectedSound);
+               checkpointCounter++;
+               finishTime = System.currentTimeMillis();
+               timeElapsed = finishTime - startTime;
+               String formattedTime = DurationFormatUtils.formatDuration(timeElapsed, "mm:ss.SSS");
+               activeCourse.append(formattedTime).append(", ");
 
-           for (String line : parkourData.getParkourRecordsDB()) {
-               String[] parkourTimesDBComponents = line.split(",");
-               String courseNameString = activeCourse.toString();
-               String[] courseNameParts = courseNameString.split(",");
+               for (String line : parkourData.getParkourRecordsDB()) {
+                   String[] parkourTimesDBComponents = line.split(",");
+                   String courseNameString = activeCourse.toString();
+                   String[] courseNameParts = courseNameString.split(",");
 
-               if (parkourTimesDBComponents[0].contains(courseNameParts[0])) {
-                   String[] activeTime = formattedTime.split("[:.]");
-                   int minutes = Integer.parseInt(activeTime[0]);
-                   int seconds = Integer.parseInt(activeTime[1]);
-                   int milliseconds = Integer.parseInt(activeTime[2]);
-                   // Calculate the total time in milliseconds
-                   long activeTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
-                   
-                   String[] recordTime = parkourTimesDBComponents[checkpointCounter].split("[:.]");
-                   minutes = Integer.parseInt(recordTime[0].replace(" ",""));
-                   seconds = Integer.parseInt(recordTime[1].replace(" ",""));
-                   milliseconds = Integer.parseInt(recordTime[2].replace(" ",""));
-                   // Calculate the total time in milliseconds
-                   long recordTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
-                   timeDifference = activeTimeCompare - recordTimeCompare;
-                   
-                   if (activeTimeCompare < recordTimeCompare) {
-                       displayMessage(EnumChatFormatting.GOLD + " > CP " + checkpointCounter + " || " + formattedTime + " (" + timeDifference + ")");
-                       messageFlag = 1;
-                   }
-                   if (activeTimeCompare >= recordTimeCompare) {
-                       displayMessage(EnumChatFormatting.GREEN + " > CP " + checkpointCounter + " || " + formattedTime + " (+" + timeDifference + ")");
-                       messageFlag = 1;
+                   if (parkourTimesDBComponents[0].contains(courseNameParts[0])) {
+                       String[] activeTime = formattedTime.split("[:.]");
+                       int minutes = Integer.parseInt(activeTime[0]);
+                       int seconds = Integer.parseInt(activeTime[1]);
+                       int milliseconds = Integer.parseInt(activeTime[2]);
+                       // Calculate the total time in milliseconds
+                       long activeTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+                       
+                       String[] recordTime = parkourTimesDBComponents[checkpointCounter].split("[:.]");
+                       minutes = Integer.parseInt(recordTime[0].replace(" ",""));
+                       seconds = Integer.parseInt(recordTime[1].replace(" ",""));
+                       milliseconds = Integer.parseInt(recordTime[2].replace(" ",""));
+                       // Calculate the total time in milliseconds
+                       long recordTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+                       timeDifference = activeTimeCompare - recordTimeCompare;
+                       
+                       if (activeTimeCompare < recordTimeCompare) {
+                           displayMessage(EnumChatFormatting.GOLD + " > CP " + checkpointCounter + " || " + formattedTime + " (" + timeDifference + ")");
+                           messageFlag = 1;
+                       }
+                       if (activeTimeCompare >= recordTimeCompare) {
+                           displayMessage(EnumChatFormatting.GREEN + " > CP " + checkpointCounter + " || " + formattedTime + " (+" + timeDifference + ")");
+                           messageFlag = 1;
+                       }
                    }
                }
+               if (messageFlag == 0) {
+                   displayMessage(EnumChatFormatting.GREEN + " > CP " + checkpointCounter + " || " + formattedTime + " (+0)");
+               }
            }
-           if (messageFlag == 0) {
-               displayMessage(EnumChatFormatting.GREEN + " > CP " + checkpointCounter + " || " + formattedTime + " (+0)");
-           }
-       }
-       
-       String chatMessage = event.message.getUnformattedText();
-       if (msg.contains("Finished parkour") && !msg.contains("]")) {
-    	   ghostRecord = false;
-           ghostPlayback = false;
-    	   
-           messageFlag = 0;
-           recordFound = 0;
-           playCheckpointSound(selectedSound);
-           finishTime = System.currentTimeMillis();
-           timeElapsed = finishTime - startTime;
-           String formattedTime = DurationFormatUtils.formatDuration(timeElapsed, "mm:ss.SSS");
-           activeCourse.append(formattedTime);
-           parkourData.getParkourTimesDB().add(activeCourse.toString());
+           
+           String chatMessage = event.message.getUnformattedText();
+           if (msg.contains("Finished parkour") && !msg.contains("]")) {
+        	   if (parkourInstant){
+                   event.setCanceled(true);
+        	   }
+        	   if (!parkourInstant){
+            	   ghostRecord = false;
+                   ghostPlayback = false;
+                   parkourActive = false;
+            	   
+                   messageFlag = 0;
+                   recordFound = 0;
+                   playCheckpointSound(selectedSound);
+                   finishTime = System.currentTimeMillis();
+                   timeElapsed = finishTime - startTime;
+                   String formattedTime = DurationFormatUtils.formatDuration(timeElapsed, "mm:ss.SSS");
+                   activeCourse.append(formattedTime);
+                   parkourData.getParkourTimesDB().add(activeCourse.toString());
 
-           for (String line : parkourData.getParkourRecordsDB()) {
-               String[] parkourTimesDBComponents = line.split(",");
-               String courseNameString = activeCourse.toString();
-               String[] courseNameParts = courseNameString.split(",");
+                   for (String line : parkourData.getParkourRecordsDB()) {
+                       String[] parkourTimesDBComponents = line.split(",");
+                       String courseNameString = activeCourse.toString();
+                       String[] courseNameParts = courseNameString.split(",");
 
-               if (parkourTimesDBComponents[0].contains(courseNameParts[0])) {
-                   recordFound = 1;
-                   String[] activeTime = formattedTime.split("[:.]");
-                   int minutes = Integer.parseInt(activeTime[0]);
-                   int seconds = Integer.parseInt(activeTime[1]);
-                   int milliseconds = Integer.parseInt(activeTime[2]);
-                   // Calculate the total time in milliseconds
-                   long activeTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
-                   
-                   String[] recordTime = parkourTimesDBComponents[checkpointCounter].split("[:.]");
-                   minutes = Integer.parseInt(recordTime[0].replace(" ",""));
-                   seconds = Integer.parseInt(recordTime[1].replace(" ",""));
-                   milliseconds = Integer.parseInt(recordTime[2].replace(" ",""));
-                   // Calculate the total time in milliseconds
-                   long recordTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+                       if (parkourTimesDBComponents[0].contains(courseNameParts[0])) {
+                           recordFound = 1;
+                           String[] activeTime = formattedTime.split("[:.]");
+                           int minutes = Integer.parseInt(activeTime[0]);
+                           int seconds = Integer.parseInt(activeTime[1]);
+                           int milliseconds = Integer.parseInt(activeTime[2]);
+                           // Calculate the total time in milliseconds
+                           long activeTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
+                           
+                           String[] recordTime = parkourTimesDBComponents[checkpointCounter].split("[:.]");
+                           minutes = Integer.parseInt(recordTime[0].replace(" ",""));
+                           seconds = Integer.parseInt(recordTime[1].replace(" ",""));
+                           milliseconds = Integer.parseInt(recordTime[2].replace(" ",""));
+                           // Calculate the total time in milliseconds
+                           long recordTimeCompare = (minutes * 60 * 1000) + (seconds * 1000) + milliseconds;
 
-                   if (activeTimeCompare < recordTimeCompare) {
+                           if (activeTimeCompare < recordTimeCompare) {
+                               playCompleteSound(selectedSound);
+                               displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
+                               //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", "Your Time: 1:23.456", 20, 60, 20);
+                               messageFlag = 1;
+                               parkourData.getParkourRecordsDB().remove(line);
+                               parkourData.getParkourRecordsDB().add(activeCourse.toString());
+
+                               saveGhostData();
+                               
+                        	   // Clear for next write
+                               ghostPositions.clear();
+                        	   ghostTimestamps.clear();
+                        	   ghostDataEntries.clear();
+                           }
+                       }
+                   }
+
+                   if (messageFlag == 0) {
+                       displayMessage(EnumChatFormatting.GREEN + "Course completed in (realtime): " + formattedTime);
+                   }
+
+                   if (recordFound == 0) {
                        playCompleteSound(selectedSound);
                        displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
-                       //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", "Your Time: 1:23.456", 20, 60, 20);
+                       //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", formattedTime, 20, 60, 20);
                        messageFlag = 1;
-                       parkourData.getParkourRecordsDB().remove(line);
                        parkourData.getParkourRecordsDB().add(activeCourse.toString());
 
                        saveGhostData();
-                       
-                	   // Clear for next write
-                       ghostPositions.clear();
-                	   ghostTimestamps.clear();
-                	   ghostDataEntries.clear();
                    }
-               }
+                   
+                   // Save data to file after updating
+                   saveDataToFile();
+        	   }
            }
-
-           if (messageFlag == 0) {
-               displayMessage(EnumChatFormatting.GREEN + "Course completed in (realtime): " + formattedTime);
-           }
-
-           if (recordFound == 0) {
-               playCompleteSound(selectedSound);
-               displayMessage(EnumChatFormatting.GOLD + "Personal Best! " + formattedTime + " (" + timeDifference + ")");
-               //Minecraft.getMinecraft().ingameGUI.displayTitle(EnumChatFormatting.GOLD + "Personal Best!", formattedTime, 20, 60, 20);
-               messageFlag = 1;
-               parkourData.getParkourRecordsDB().add(activeCourse.toString());
-
-               saveGhostData();
-           }
-           
-           // Save data to file after updating
-           saveDataToFile();
        }
    }
 
@@ -521,6 +557,9 @@ public class Parkour4Coins {
             break;
         case 2:
             Minecraft.getMinecraft().getSoundHandler().playSound(PositionedSoundRecord.create(new ResourceLocation(MODID, "sonic_complete"), 1.0F));
+            break;
+        case 3:
+            Minecraft.getMinecraft().getSoundHandler().playSound(PositionedSoundRecord.create(new ResourceLocation(MODID, "mario_complete"), 1.0F));
             break;
         default:
         	Minecraft.getMinecraft().getSoundHandler().playSound(PositionedSoundRecord.create(new ResourceLocation(MODID, "vanilla_complete"), 1.0F));
@@ -604,6 +643,58 @@ public class Parkour4Coins {
             	   displayMessage("Time to reach end: " + segmentFinishTime);
             	   distanceToEndTold = true;
         	   }
+           }
+	   }
+	   
+	   if (parkourInstant){
+		   // Check current block
+		   EntityPlayerSP player = Minecraft.getMinecraft().thePlayer;
+           BlockPos playerPos = new BlockPos(player.posX, player.posY, player.posZ);
+           BlockPos playerPos2 = new BlockPos(player.posX, player.posY + 1, player.posZ);
+           Block block = player.worldObj.getBlockState(playerPos).getBlock();
+
+           double radius = 1.0;
+                      
+           World world = player.worldObj;
+           
+           for (EntityArmorStand armorStand : world.getEntitiesWithinAABB(EntityArmorStand.class,
+               player.getEntityBoundingBox().expand(radius, radius, radius))) {
+               double distanceSq = player.getDistanceSqToEntity(armorStand);
+               if (distanceSq <= radius * radius) {
+                   if (armorStand.hasCustomName()) {
+                       String customName = armorStand.getCustomNameTag();
+                       //displayMessage("Found Armor Stand with custom name: " + customName);
+                       if (customName.contains("Parkour Start")){
+                    	   customNamePrevious = "";
+                    	   displayMessage(customName + "ed with simulated instant plates");
+                           instantStartTime = System.currentTimeMillis();
+                       }
+                       if (customName.contains("Parkour Checkpoint")){
+                           if (!customName.equals(customNamePrevious)){
+                               playCheckpointSound(selectedSound);
+                        	   long instantCheckpointTime = System.currentTimeMillis();
+                        	   long instantCheckpointTimeMilli = instantCheckpointTime - instantStartTime;
+                               long minutes = (instantCheckpointTimeMilli / 60000) % 60;
+                               long seconds = (instantCheckpointTimeMilli / 1000) % 60;
+                               long milliseconds = instantCheckpointTimeMilli % 1000;
+                               displayMessage(customName + " in " + minutes + ":" + seconds + ":" + milliseconds);
+                           }
+                           customNamePrevious = customName;
+                       }
+                       if (customName.contains("Parkour End")){
+                           if (!customName.equals(customNamePrevious)){
+                        	   instantParkourEnd = true;
+                               long instantEndTime = System.currentTimeMillis();
+                               long instantFinishTimeMilli = instantEndTime - instantStartTime;
+                               long minutes = (instantFinishTimeMilli / 60000) % 60;
+                               long seconds = (instantFinishTimeMilli / 1000) % 60;
+                               long milliseconds = instantFinishTimeMilli % 1000;
+                        	   displayMessage(customName + " in " + minutes + ":" + seconds + ":" + milliseconds);
+                           }
+                           customNamePrevious = customName;
+                       }
+                   }
+               }
            }
 	   }
 
