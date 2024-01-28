@@ -13,10 +13,11 @@ You can now use /parkourstart and /parkourend to set up simulated checkpoints. T
 
 
 Commands:
+
+/parkourhelp - List commands
 /parkoursound - Cycles the parkour checkpoint/finish sound. No need to stand on the start plate
 /parkourghost - Toggles if the best-time ghost is displayed. Your ghost will still be recorded (default: true)
 /parkoursplits - Toggles if your best splits are shown when you start a course (default: false)
 /parkourhud - Toggles if the split time/speed hud is displayed in the top-right (default: true)
 /parkourspawn - Warps you to your island and then pulls up the visit menu after a delay. This will reduce the number of times you get errors from attempting to warp too quickly
-
-Want to see what it would be like if parkour checkpoints registered instantly instead of every half second? Just type /parkourinstant
+/parkourinstant - Simulate instant parkour plates
