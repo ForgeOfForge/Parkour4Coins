@@ -9,6 +9,14 @@ The **Parkour4Coins Mod** has received *a ton* of updates! Consider this your Sk
 
 **Movement Speed Tracker**: Your movement speed is displayed in the top-right of the screen. (100% = vanilla walk speed, so the percentage should reflect your movement speed stat fairly accurately.)
 
-This is admittedly a bit sloppy on the code front, but it should work alright. If you experience any bugs, performance issues, or crashes please let me know!
+You can now use /parkourstart and /parkourend to set up simulated checkpoints. The mod will automatically start a timer when you are within one block of the start and displays the finish time when you are within one block of the end. This means you can accurately and consistently test different routes anywhere on a parkour course. The blocks marked as the start/end will have fire particles above them while active.
 
-Download Here: 
+
+Commands:
+/parkoursound - Cycles the parkour checkpoint/finish sound. No need to stand on the start plate
+/parkourghost - Toggles if the best-time ghost is displayed. Your ghost will still be recorded (default: true)
+/parkoursplits - Toggles if your best splits are shown when you start a course (default: false)
+/parkourhud - Toggles if the split time/speed hud is displayed in the top-right (default: true)
+/parkourspawn - Warps you to your island and then pulls up the visit menu after a delay. This will reduce the number of times you get errors from attempting to warp too quickly
+
+Want to see what it would be like if parkour checkpoints registered instantly instead of every half second? Just type /parkourinstant
