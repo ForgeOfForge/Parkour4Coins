@@ -13,7 +13,6 @@ You can now use /parkourstart and /parkourend to set up simulated checkpoints. T
 
 
 Commands:
-
 /parkourhelp - List commands
 /parkoursound - Cycles the parkour checkpoint/finish sound. No need to stand on the start plate
 /parkourghost - Toggles if the best-time ghost is displayed. Your ghost will still be recorded (default: true)
